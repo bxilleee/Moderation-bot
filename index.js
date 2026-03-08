@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -8,30 +8,33 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent
+    ],
+    partials: [Partials.Channel]
 });
 
-// Serve the dashboard
 app.use(express.static('public'));
 
-// Real-time communication
 io.on('connection', (socket) => {
-    console.log('User connected to dashboard');
+    // Send list of channels to the website when it loads
+    socket.on('getChannels', () => {
+        const channels = client.channels.cache
+            .filter(c => c.type === 0) // Only text channels
+            .map(c => ({ id: c.id, name: c.name }));
+        socket.emit('channelList', channels);
+    });
 
-    // Handle sending messages from the website
     socket.on('sendMessage', async (data) => {
         try {
             const channel = await client.channels.fetch(data.channelId);
-            if (channel) {
-                await channel.send(data.content);
-            }
-        } catch (err) {
-            console.error("Failed to send message:", err);
-        }
+            if (channel) await channel.send(data.content);
+        } catch (err) { console.error(err); }
     });
 });
 
-// Pipe Discord messages to the website tab
 client.on('messageCreate', (message) => {
     if (message.author.bot) return;
     io.emit('discordMessage', {
@@ -41,5 +44,5 @@ client.on('messageCreate', (message) => {
     });
 });
 
-client.login('YOUR_BOT_TOKEN_HERE');
-server.listen(3000, () => console.log('Dashboard live on port 3000'));
+client.login(process.env.TOKEN); // Set this in Replit Secrets
+server.listen(3000, () => console.log('Web Dashboard is online!'));
